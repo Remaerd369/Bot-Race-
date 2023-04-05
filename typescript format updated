@@ -1,0 +1,153 @@
+/* =====================================================
+                        IMPORTS
+===================================================== */
+import * as fs from 'fs';
+import * as Plotly from 'plotly.js-dist';
+import * as createCsvWriter from 'csv-writer';
+
+/* =====================================================
+                        INTERFACES
+===================================================== */
+interface FunctionInfo {
+  params: string[];
+  logic: string[];
+}
+
+interface ContractInfo {
+  [functionName: string]: FunctionInfo;
+}
+
+interface ExtractedInfo {
+  [contractName: string]: ContractInfo;
+}
+
+/* =====================================================
+                        FUNCTIONS
+===================================================== */
+function extractInfo(solidityCode: string): ExtractedInfo {
+  // Regular expressions to match function signature and contract definition information
+  const funcPattern = /function\s+(\w+)\((.*?)\)/;
+  const contractPattern = /contract\s+(\w+)/;
+
+  // Dictionary to store the extracted information
+  const info: ExtractedInfo = {};
+
+  // Split the Solidity code into lines
+  const lines = solidityCode.split('\n');
+
+  // Keep track of the current contract
+  let currentContract: string | null = null;
+
+  // Loop through the lines
+  for (const line of lines) {
+    // Try to match the line to the contract definition pattern
+    const contractMatch = line.match(contractPattern);
+    if (contractMatch) {
+      // Update the current contract name
+      currentContract = contractMatch[1];
+      info[currentContract] = {};
+      continue;
+    }
+
+    // Try to match the line to the function signature pattern
+    const funcMatch = line.match(funcPattern);
+    if (funcMatch) {
+      // Extract the function name and parameters
+      const funcName = funcMatch[1];
+      const funcParams = funcMatch[2].split(',');
+
+      // Add the extracted information to the dictionary
+      info[currentContract!][funcName] = { params: funcParams, logic: [] };
+
+      // Get the start and end lines of the function
+      const startLine = lines.indexOf(line) + 1;
+      const endLine = lines.slice(startLine).findIndex(l => l.includes('}')) + startLine;
+
+      // Add the logic lines to the dictionary
+      for (let i = startLine; i < endLine; i++) {
+        info[currentContract!][funcName].logic.push(lines[i].trim());
+      }
+    }
+  }
+
+  return info;
+}
+
+/* =====================================================
+                        CONSTANTS
+===================================================== */
+const solidityCode = `
+`;
+
+/* =====================================================
+                        EXECUTION
+===================================================== */
+// Dictionary to store the mapping of tasks to contract function signatures
+const contractMapping: { [taskName: string]: string[] } = {};
+
+// Get the extracted information from the Solidity code
+const info = extractInfo(solidityCode);
+
+// Loop through the extracted information
+for (const [contractName, contractInfo] of Object.entries(info)) {
+  for (const [funcName, funcInfo] of Object.entries(contractInfo)) {
+    const taskName = `${contractName}.${funcName}`;
+    contractMapping[taskName] = funcInfo.params;
+  }
+}
+
+console.log(contractMapping);
+
+// Dictionary to store the number of functions in each contract
+const contractFunctionCount: { [contractName: string]: number } = {};
+
+// Loop through the extracted information
+for (const [contractName, contractInfo] of Object.entries(info)) {
+  contractFunctionCount[contractName] = Object.keys(contractInfo).length;
+}
+
+// Plotly chart configuration
+const data = [{
+  y: Object.keys(contractFunctionCount),
+  x: Object.values(contractFunctionCount),
+  type: 'bar',
+  text: Object.values(contractFunctionCount).map(String),
+marker: {
+color: 'red',
+line: {
+color: 'black',
+width: 1.5,
+},
+},
+opacity: 0.6,
+}];
+
+const layout = {
+title: 'Function Usage in Smart Contract',
+xaxis: { title: 'Usage Count' },
+yaxis: { title: 'Function Name' },
+};
+
+// Render the Plotly chart
+Plotly.newPlot('chart', data, layout);
+
+// CSV Writer configuration
+const csvWriter = createCsvWriter.createObjectCsvWriter({
+path: 'contract_mapping.csv',
+header: [
+{ id: 'function', title: 'Function' },
+{ id: 'arguments', title: 'Arguments' },
+],
+});
+
+// Prepare the records for the CSV file
+const records = Object.entries(contractMapping).map(([key, value]) => ({
+function: key,
+arguments: value,
+}));
+
+// Write the records to the CSV file
+csvWriter.writeRecords(records);
+
+// Save the dictionary to a file
+fs.writeFileSync('contract_mapping.txt', Object.entries(contractMapping).map(([taskName, params]) => ${taskName}: ${params}\n).join(''));
